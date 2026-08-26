@@ -1,0 +1,43 @@
+# Claude Code Status Line (Windows)
+
+A custom status line for [Claude Code](https://claude.com/claude-code) on Windows/PowerShell. Shows your model, context usage, tokens, project, git branch, and rate limits — all in one line.
+
+![Status line preview](/preview/screenshot.jpg)
+
+## What it shows
+
+- **Model** — e.g. `Opus 5`
+- **Context bar** — a 10-block bar + % of context window used
+- **Tokens** — used / total (e.g. `200k/1M`)
+- **Project folder**
+- **Git branch** (only shown inside a repo)
+- **Rate limit** — 5h or 7d usage %, plus a countdown to when it resets
+
+Colors turn green → yellow → red as usage climbs, so you can tell at a glance when you're getting close to a limit.
+
+## Setup
+
+1. Copy `statusline.ps1` to `~/.claude/statusline.ps1`.
+2. Add this to `~/.claude/settings.json` (merge it in, don't replace the file):
+
+   ```json
+   "statusLine": {
+     "type": "command",
+     "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ~/.claude/statusline.ps1"
+   }
+   ```
+
+3. Restart Claude Code. The new status line will show up at the bottom.
+
+## Testing
+
+Want to check it works before trusting it? Run the included tests:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-payloads.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-git-branch.ps1
+```
+
+## Want the full details?
+
+See [statusline.md](statusline.md) for the complete build spec, every edge case handled, and how to customize colors, thresholds, and segments.
