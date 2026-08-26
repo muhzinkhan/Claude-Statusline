@@ -10,7 +10,7 @@ bug that was actually hit and fixed during the original build.
 |---|---|
 | `statusline.md` | This document — the full recreation spec. |
 | `statusline.ps1` | Reference copy of the script. The **live** copy Claude Code actually runs lives at `~/.claude/statusline.ps1`; this is the source of truth to copy from. |
-| `tests/test-payloads.ps1` | Renders the line against 7 payload shapes (thresholds, missing keys, malformed input). |
+| `tests/test-payloads.ps1` | Renders the line against 13 payload shapes (thresholds, reset clock, missing keys, malformed input). |
 | `tests/test-git-branch.ps1` | Exercises the branch segment across 5 repo states, using throwaway repos under `$env:TEMP`. |
 
 Both test scripts default to testing the installed copy at `~/.claude/statusline.ps1`.
@@ -28,7 +28,7 @@ If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take
 A single-line status bar with seven segments, separated by a dim `|`:
 
 ```
-Opus 5 | █░░░░░░░░░ 8% | 76k/1M | my-project | feature/status-bar | 23% 5h
+Opus 5 | █░░░░░░░░░ 8% | 76k/1M | my-project | feature/status-bar | 5h 23% ↻ 2h14m
 ```
 
 | # | Segment | Source field | Color |
@@ -39,9 +39,20 @@ Opus 5 | █░░░░░░░░░ 8% | 76k/1M | my-project | feature/statu
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
 | 5 | Current directory (leaf only) | `workspace.current_dir` | dim |
 | 6 | Git branch, only inside a repo | `git branch --show-current` | green |
-| 7 | Rate limit, 5h → 7d fallback | `rate_limits.*.used_percentage` | cyan |
+| 7 | Rate limit %, 5h → 7d fallback | `rate_limits.*.used_percentage` | same threshold color |
+| 7 | ↻ time until that window resets | `rate_limits.*.resets_at` | dim |
 
 Threshold colors are keyed on **percent used**: green below 50, yellow 50–79, red 80+.
+The *same* rule drives segments 2, 3 and 7, so every "how full am I" number on the line
+speaks one language. Segment 7 leads with its window label (`5h` / `7d`) because the bare
+percentage is ambiguous once a clock sits next to it.
+
+The reset clock renders `↻ 2h14m`, `↻ 47m`, `↻ 4d5h`, or `↻ now` when the reset has passed.
+It is dim so the eye lands on the percentage.
+
+Colour variants considered and rejected: cyan usage with a dim clock (no shared rule with
+the context bar); a magenta clock (a sixth colour on one line); and a segment that stays
+dim until 80% (loses at-a-glance reading during normal use).
 
 Every segment is individually optional. If its data is absent the segment — and its
 separator — disappears, leaving the rest of the line intact.
@@ -72,6 +83,23 @@ function Format-Tokens($n) {
     return "{0:N0}k" -f ($n / 1000)
 }
 
+# Shared by the context bar and the rate limit, so both "how full am I" numbers read alike.
+function Get-ThresholdColor($pct) {
+    if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
+}
+
+# Round to the nearest minute before decomposing: TimeSpan.Minutes truncates, so a real
+# 2h13m59s would otherwise read "2h13m" for almost the whole minute. Floor the division —
+# [int] rounds, which would turn 170 minutes into "3h50m".
+function Format-TimeLeft($span) {
+    if ($span.TotalMinutes -lt 1) { return "now" }
+    $mins = [int][math]::Round($span.TotalMinutes)
+    if ($mins -lt 60)   { return "${mins}m" }
+    if ($mins -lt 1440) { return "$([int][math]::Floor($mins / 60))h$($mins % 60)m" }
+    $hours = [int][math]::Round($span.TotalHours)
+    return "$([int][math]::Floor($hours / 24))d$($hours % 24)h"
+}
+
 $parts = @()
 
 # 1. Model name
@@ -85,7 +113,7 @@ if ($null -ne $usedPct) {
     # Clamp with explicit doubles: [math]::Min(100, 12.6) binds the int overload and rounds.
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
-    $color  = if ($pct -lt 50) { $green } elseif ($pct -lt 80) { $yellow } else { $red }
+    $color  = Get-ThresholdColor $pct
     $filled = [int][math]::Round($pct / 10)
     $bar    = ([string][char]0x2588) * $filled + ([string][char]0x2591) * (10 - $filled)
     $parts += "$color$bar $([math]::Round($pct))%$reset"
@@ -113,12 +141,22 @@ if ($dir -and (Test-Path $dir)) {
     if ($branch) { $parts += "$green$($branch.Trim())$reset" }
 }
 
-# 7. Rate limit usage (5-hour window, falling back to 7-day)
-$rl = $data.rate_limits
-if ($null -ne $rl.five_hour.used_percentage) {
-    $parts += "$cyan$([math]::Round($rl.five_hour.used_percentage))% 5h$reset"
-} elseif ($null -ne $rl.seven_day.used_percentage) {
-    $parts += "$cyan$([math]::Round($rl.seven_day.used_percentage))% 7d$reset"
+# 7. Rate limit usage, plus time until that window resets
+$rl    = $data.rate_limits
+$label = $null
+if     ($null -ne $rl.five_hour.used_percentage) { $label = "5h"; $win = $rl.five_hour }
+elseif ($null -ne $rl.seven_day.used_percentage) { $label = "7d"; $win = $rl.seven_day }
+
+if ($label) {
+    $rlPct = [double]$win.used_percentage
+    $seg   = "$(Get-ThresholdColor $rlPct)$label $([math]::Round($rlPct))%$reset"
+
+    # resets_at is unix epoch seconds (the CLI reads it as new Date(resets_at * 1000)).
+    if ($win.resets_at) {
+        $left = [DateTimeOffset]::FromUnixTimeSeconds([int64]$win.resets_at) - [DateTimeOffset]::Now
+        $seg += " $dim$([string][char]0x21BB) $(Format-TimeLeft $left)$reset"
+    }
+    $parts += $seg
 }
 
 [Console]::Out.Write(($parts -join " $dim|$reset "))
@@ -177,7 +215,23 @@ resolves `~`. Use forward slashes; backslashes will not survive.
 Malformed stdin must `return` silently. Without `try/catch`, a PowerShell stack trace is
 printed into the status bar on every refresh.
 
-**8. Don't add a git-dirty indicator casually.**
+**8. `TimeSpan.Minutes` truncates, and `[int]` on a division rounds.**
+Both bite the reset clock. A real 2h13m59s remaining renders as `2h13m` for almost the
+whole minute, because `.Minutes` drops the seconds — so round `TotalMinutes` to the nearest
+minute *first*, then decompose. But decompose with `[math]::Floor`, not `[int]`: `[int]`
+rounds to nearest, which turns 170 minutes into `3h50m` instead of `2h50m`. The two fixes
+pull in opposite directions and you need both.
+
+**9. `resets_at` is unix epoch *seconds*, not milliseconds.**
+Confirmed by how the CLI itself consumes it: `new Date(resets_at * 1000)`. Use
+`[DateTimeOffset]::FromUnixTimeSeconds()`. Feeding it to `FromUnixTimeMilliseconds()` puts
+the reset in 1970 and the clock reads `now` forever.
+
+**10. Clamp the clock at zero.**
+A reset timestamp can sit in the past between windows. Without a `TotalMinutes -lt 1` guard
+the segment renders a negative duration.
+
+**11. Don't add a git-dirty indicator casually.**
 It needs a second subprocess (`git status --porcelain`), on top of an existing
 `powershell.exe` cold start (~150–250 ms) and one `git` call, on every refresh. On a large
 repo the lag is visible. Everything else in this line is already in the stdin JSON and
@@ -198,7 +252,7 @@ The JSON delivered on stdin. Verified against the Claude Code CLI binary — fie
 | `context_window.total_input_tokens`, `.total_output_tokens`, `.current_usage` | `current_usage` is an object, not a number |
 | `exceeds_200k_tokens` | boolean |
 | `cost.{total_cost_usd, total_duration_ms, total_api_duration_ms, total_lines_added, total_lines_removed}` | |
-| `rate_limits.five_hour.{used_percentage, resets_at}` | *conditional* |
+| `rate_limits.five_hour.{used_percentage, resets_at}` | *conditional*; `resets_at` is **unix epoch seconds** and is itself optional within the window |
 | `rate_limits.seven_day.{used_percentage, resets_at}` | *conditional*, and **independent** of `five_hour` — either can appear alone |
 | `fast_mode`, `effort.level`, `thinking.enabled` | |
 | `agent.name` | *conditional* — set while a subagent runs |
@@ -231,6 +285,14 @@ Cover these cases and confirm each expected result:
 | `used_percentage: 12.6`, size 200000 | `█░░░░░░░░░ 13%` green, `25k/200k` — **not** `26k` |
 | `used_percentage: 64` | `██████░░░░ 64%` yellow, `128k/200k` |
 | `used_percentage: 91.3`, size 1000000 | `█████████░ 91%` red, `913k/1M` |
+| `five_hour` 23%, resets in 2h14m | `5h 23%` green, clock `↻ 2h14m` — **not** `2h13m` (Gotcha 8) |
+| `five_hour` 64%, resets in 47m | `5h 64%` yellow, clock `↻ 47m` |
+| `five_hour` 84% | `5h 84%` red — same threshold rule as the context bar |
+| `resets_at` in the past | `↻ now`, never a negative duration |
+| `seven_day` only, 4d5h out | `7d 44%`, clock `↻ 4d5h` — **not** `↻ 101h` |
+| usage present, `resets_at` absent | `5h 23%` alone, no clock |
+| reset 170 minutes out | `↻ 2h50m` — **not** `↻ 3h50m` (Gotcha 8) |
+| reset 1440 minutes out | `↻ 1d0h` |
 | no `rate_limits` key | line ends after directory/branch, no trailing `\|` |
 | no `context_window` key | segments 2–4 all absent, rest of line intact |
 | `{}` | prints nothing, exit 0 |
@@ -244,7 +306,13 @@ Cover these cases and confirm each expected result:
 
 - **Reorder** segments by moving the `$parts +=` blocks; order in the array is order on screen.
 - **Bar width**: change `10` in both `$filled` (`$pct / 10`) and the `(10 - $filled)` padding.
-- **Thresholds**: the `-lt 50` / `-lt 80` comparisons.
+- **Thresholds**: the `-lt 50` / `-lt 80` comparisons in `Get-ThresholdColor`, which drives
+  segments 2, 3 and 7 together. Split it into two functions to colour the context bar and
+  the rate limit on different scales.
+- **Reset clock glyph**: `[char]0x21BB` (`↻`). Use `~` to stay ASCII.
+- **Clock colour**: it is `$dim`; make it `$cyan` or `$magenta` to give time its own colour.
+- **Drop the clock** entirely by removing the `if ($win.resets_at)` block — the percentage
+  keeps working on its own.
 - **Show remaining instead of used**: swap to `$ctx.remaining_percentage` and invert the
   threshold comparisons.
 - **Detached HEAD**: to show a short SHA instead of nothing, fall back to

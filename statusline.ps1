@@ -19,6 +19,23 @@ function Format-Tokens($n) {
     return "{0:N0}k" -f ($n / 1000)
 }
 
+# Shared by the context bar and the rate limit, so both "how full am I" numbers read alike.
+function Get-ThresholdColor($pct) {
+    if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
+}
+
+# Round to the nearest minute before decomposing: TimeSpan.Minutes truncates, so a real
+# 2h13m59s would otherwise read "2h13m" for almost the whole minute. Floor the division —
+# [int] rounds, which would turn 170 minutes into "3h50m".
+function Format-TimeLeft($span) {
+    if ($span.TotalMinutes -lt 1) { return "now" }
+    $mins = [int][math]::Round($span.TotalMinutes)
+    if ($mins -lt 60)   { return "${mins}m" }
+    if ($mins -lt 1440) { return "$([int][math]::Floor($mins / 60))h$($mins % 60)m" }
+    $hours = [int][math]::Round($span.TotalHours)
+    return "$([int][math]::Floor($hours / 24))d$($hours % 24)h"
+}
+
 $parts = @()
 
 # 1. Model name
@@ -32,7 +49,7 @@ if ($null -ne $usedPct) {
     # Clamp with explicit doubles: [math]::Min(100, 12.6) binds the int overload and rounds.
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
-    $color  = if ($pct -lt 50) { $green } elseif ($pct -lt 80) { $yellow } else { $red }
+    $color  = Get-ThresholdColor $pct
     $filled = [int][math]::Round($pct / 10)
     $bar    = ([string][char]0x2588) * $filled + ([string][char]0x2591) * (10 - $filled)
     $parts += "$color$bar $([math]::Round($pct))%$reset"
@@ -60,12 +77,22 @@ if ($dir -and (Test-Path $dir)) {
     if ($branch) { $parts += "$green$($branch.Trim())$reset" }
 }
 
-# 7. Rate limit usage (5-hour window, falling back to 7-day)
-$rl = $data.rate_limits
-if ($null -ne $rl.five_hour.used_percentage) {
-    $parts += "$cyan$([math]::Round($rl.five_hour.used_percentage))% 5h$reset"
-} elseif ($null -ne $rl.seven_day.used_percentage) {
-    $parts += "$cyan$([math]::Round($rl.seven_day.used_percentage))% 7d$reset"
+# 7. Rate limit usage, plus time until that window resets
+$rl    = $data.rate_limits
+$label = $null
+if     ($null -ne $rl.five_hour.used_percentage) { $label = "5h"; $win = $rl.five_hour }
+elseif ($null -ne $rl.seven_day.used_percentage) { $label = "7d"; $win = $rl.seven_day }
+
+if ($label) {
+    $rlPct = [double]$win.used_percentage
+    $seg   = "$(Get-ThresholdColor $rlPct)$label $([math]::Round($rlPct))%$reset"
+
+    # resets_at is unix epoch seconds (the CLI reads it as new Date(resets_at * 1000)).
+    if ($win.resets_at) {
+        $left = [DateTimeOffset]::FromUnixTimeSeconds([int64]$win.resets_at) - [DateTimeOffset]::Now
+        $seg += " $dim$([string][char]0x21BB) $(Format-TimeLeft $left)$reset"
+    }
+    $parts += $seg
 }
 
 [Console]::Out.Write(($parts -join " $dim|$reset "))

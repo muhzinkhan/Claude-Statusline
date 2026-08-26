@@ -49,6 +49,52 @@ Run "no context_window at all" @"
  "rate_limits":{"five_hour":{"used_percentage":23.1}}}
 "@
 
+# --- rate limit window + reset clock ---
+# resets_at is unix epoch seconds, so build these relative to now.
+function Epoch($timespan) { [DateTimeOffset]::Now.Add($timespan).ToUnixTimeSeconds() }
+
+Run "reset in 2h14m" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":23.1,"resets_at":$(Epoch (New-TimeSpan -Hours 2 -Minutes 14))}}}
+"@
+
+Run "reset in 47m" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":64,"resets_at":$(Epoch (New-TimeSpan -Minutes 47))}}}
+"@
+
+Run "rate limit 84% (red)" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":84,"resets_at":$(Epoch (New-TimeSpan -Minutes 38))}}}
+"@
+
+Run "reset already past" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":12,"resets_at":$(Epoch (New-TimeSpan -Minutes -5))}}}
+"@
+
+Run "7d window, 4d5h out" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"seven_day":{"used_percentage":44,"resets_at":$(Epoch (New-TimeSpan -Days 4 -Hours 5))}}}
+"@
+
+Run "usage but no resets_at" @"
+{"model":{"display_name":"Opus 5"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":8,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":23.1}}}
+"@
+
 Run "empty payload"   "{}"
 Run "garbage payload" "not json at all"
 
@@ -60,5 +106,13 @@ Expected:
   high usage     ->  91% red, 913k/1M
   no rate limits ->  line ends after the directory, no trailing separator
   no context     ->  segments 2-4 absent, rest of the line intact
+
+  reset 2h14m    ->  5h 23% green,  clock reads 2h14m
+  reset 47m      ->  5h 64% yellow, clock reads 47m
+  84% red        ->  5h 84% red,    clock reads 38m
+  reset past     ->  clock reads 'now', never a negative duration
+  7d window      ->  7d 44%,        clock reads 4d5h (not 101h)
+  no resets_at   ->  '5h 23%' alone, no clock
+
   empty/garbage  ->  nothing at all
 "@
