@@ -51,12 +51,15 @@ if ($null -ne $usedPct) {
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
     $color  = Get-ThresholdColor $pct
-    # Harvey ball. Quarter resolution is enough: the exact % sits right beside it.
-    $ring   = @(0x25CB, 0x25D4, 0x25D1, 0x25D5, 0x25CF)
-    $idx    = [int][math]::Round($pct / 25)
-    # Bias any nonzero usage up to at least a sliver, so 0% and 8% don't both read empty.
-    if ($pct -gt 0 -and $idx -eq 0) { $idx = 1 }
-    $bar    = [string][char]$ring[$idx]
+    # Harvey ball on explicit bands, not arithmetic rounding. The empty and full glyphs get
+    # narrow bands so the ring only reads full from 87.5% up. Each band opens inclusive,
+    # which is what puts 37.5 on the half and 87.5 on the full.
+    if     ($pct -le 9)    { $glyph = 0x25CB }   # circle
+    elseif ($pct -lt 37.5) { $glyph = 0x25D4 }   # quarter
+    elseif ($pct -le 62.5) { $glyph = 0x25D1 }   # half
+    elseif ($pct -lt 87.5) { $glyph = 0x25D5 }   # three quarters
+    else                   { $glyph = 0x25CF }   # full
+    $bar = [string][char]$glyph
     $parts += "$color$bar $([math]::Round($pct))%$reset"
 
     # 4. Tokens used out of the context window size

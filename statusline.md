@@ -28,19 +28,34 @@ If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take
 A single-line status bar with seven segments, separated by a dim `|`:
 
 ```
-Opus 5 | ◔ 8% | 76k/1M | my-project | feature/status-bar | 5h ██░░░░░░░░ 23% ↻ 2h14m
+Opus 5 | ○ 8% | 76k/1M | my-project | feature/status-bar | 5h ██░░░░░░░░ 23% ↻ 2h14m
 ```
 
 | # | Segment | Source field | Color |
 |---|---------|--------------|-------|
 | 1 | Model name | `model.display_name` | Claude orange `#D97757` (24-bit) |
-| 2 | Context ring (Harvey ball) | `context_window.used_percentage` | threshold: green / yellow / red |
+| 2 | Context ring (Harvey ball, see bands below) | `context_window.used_percentage` | threshold: green / yellow / red |
 | 3 | Context **used** % | `context_window.used_percentage` | same threshold color |
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
 | 5 | Current directory (leaf only) | `workspace.current_dir` | dim |
 | 6 | Git branch, only inside a repo | `git branch --show-current` | blue |
 | 7 | Rate limit 10-block bar + %, 5h → 7d fallback | `rate_limits.*.used_percentage` | same threshold color |
 | 7 | ↻ time until that window resets | `rate_limits.*.resets_at` | dim |
+
+The ring glyph is picked from explicit bands, not by rounding — the empty and full
+glyphs get deliberately narrow ones, so `●` means "genuinely nearly full" rather than
+"rounded up from 88".
+
+| Band | Glyph |
+|---|---|
+| 0 – 9 | `○` |
+| >9 – <37.5 | `◔` |
+| 37.5 – 62.5 | `◑` |
+| >62.5 – <87.5 | `◕` |
+| 87.5+ | `●` |
+
+Each band opens inclusive and closes exclusive, which is what puts 37.5 on `◑` and 87.5
+on `●`. Note `○` covers everything up to 9%, so a barely-used context reads as empty.
 
 Threshold colors are keyed on **percent used**: green below 50, yellow 50–79, red 80+.
 The *same* rule drives segments 2, 3 and 7, so every "how full am I" number on the line
@@ -115,12 +130,15 @@ if ($null -ne $usedPct) {
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
     $color  = Get-ThresholdColor $pct
-    # Harvey ball. Quarter resolution is enough: the exact % sits right beside it.
-    $ring   = @(0x25CB, 0x25D4, 0x25D1, 0x25D5, 0x25CF)
-    $idx    = [int][math]::Round($pct / 25)
-    # Bias any nonzero usage up to at least a sliver, so 0% and 8% don't both read empty.
-    if ($pct -gt 0 -and $idx -eq 0) { $idx = 1 }
-    $bar    = [string][char]$ring[$idx]
+    # Harvey ball on explicit bands, not arithmetic rounding. The empty and full glyphs get
+    # narrow bands so the ring only reads full from 87.5% up. Each band opens inclusive,
+    # which is what puts 37.5 on the half and 87.5 on the full.
+    if     ($pct -le 9)    { $glyph = 0x25CB }   # circle
+    elseif ($pct -lt 37.5) { $glyph = 0x25D4 }   # quarter
+    elseif ($pct -le 62.5) { $glyph = 0x25D1 }   # half
+    elseif ($pct -lt 87.5) { $glyph = 0x25D5 }   # three quarters
+    else                   { $glyph = 0x25CF }   # full
+    $bar = [string][char]$glyph
     $parts += "$color$bar $([math]::Round($pct))%$reset"
 
     # 4. Tokens used out of the context window size
@@ -305,7 +323,9 @@ Cover these cases and confirm each expected result:
 | reset 1440 minutes out | `↻ 1d0h` |
 | no `rate_limits` key | line ends after directory/branch, no trailing `\|` |
 | no `context_window` key | segments 2–4 all absent, rest of line intact |
-| `used_percentage: 0.4` | `◔ 0%` — nonzero never reads as an empty ring |
+| `used_percentage: 9` / `9.1` | `○ 9%` / `◔ 9%` — the first band edge |
+| `used_percentage: 37.5` / `62.5` | both `◑ 38%` / `◑ 63%` — the half band is closed at both ends |
+| `used_percentage: 87.4` / `87.5` | `◕ 87%` / `● 88%` — full starts exactly at 87.5 |
 | `{}` | prints nothing, exit 0 |
 | non-JSON input | prints nothing, exit 0 |
 | repo with commits | branch in blue |
@@ -316,7 +336,9 @@ Cover these cases and confirm each expected result:
 ## Customizing
 
 - **Reorder** segments by moving the `$parts +=` blocks; order in the array is order on screen.
-- **Ring resolution**: `$ring` is quarter-resolution. Unicode has no finer monochrome pie
+- **Ring bands**: the `-le 9` / `-lt 37.5` / `-le 62.5` / `-lt 87.5` chain. Widen or narrow
+  any band by moving one comparison; keep them ordered, since the chain returns on first match.
+- **Ring resolution**: quarter-resolution is the ceiling. Unicode has no finer monochrome pie
   set, so more steps means changing shape: `@(0x2581..0x2588)` gives an 8-level vertical meter
   in one cell, and the original 10-block bar was
   `([string][char]0x2588) * [int][math]::Round($pct / 10)` padded out with `0x2591`.
