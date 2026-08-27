@@ -12,13 +12,16 @@ bug that was actually hit and fixed during the original build.
 | `statusline.ps1` | Reference copy of the script. The **live** copy Claude Code actually runs lives at `~/.claude/statusline.ps1`; this is the source of truth to copy from. |
 | `tests/test-payloads.ps1` | Renders the line against 13 payload shapes (thresholds, reset clock, missing keys, malformed input). |
 | `tests/test-git-branch.ps1` | Exercises the branch segment across 5 repo states, using throwaway repos under `$env:TEMP`. |
+| `tests/test-ring-bands.ps1` | Asserts the context ring glyph at all 17 band boundaries. Exits 1 on drift. |
 
-Both test scripts default to testing the installed copy at `~/.claude/statusline.ps1`.
-Pass `-Script .\statusline.ps1` to test the local reference copy instead.
+All three test scripts default to testing the installed copy at `~/.claude/statusline.ps1`.
+Pass `-Script .\statusline.ps1` to test the local reference copy instead. The first two print
+lines to eyeball; `test-ring-bands.ps1` asserts and sets an exit code.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-payloads.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-git-branch.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-ring-bands.ps1
 ```
 
 If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take effect.
@@ -66,7 +69,7 @@ The reset clock renders `↻ 2h14m`, `↻ 47m`, `↻ 4d5h`, or `↻ now` when th
 It is dim so the eye lands on the percentage.
 
 Colour variants considered and rejected: cyan usage with a dim clock (no shared rule with
-the context bar); a magenta clock (a sixth colour on one line); and a segment that stays
+the context ring); a magenta clock (a sixth colour on one line); and a segment that stays
 dim until 80% (loses at-a-glance reading during normal use).
 
 Every segment is individually optional. If its data is absent the segment — and its
@@ -99,7 +102,7 @@ function Format-Tokens($n) {
     return "{0:N0}k" -f ($n / 1000)
 }
 
-# Shared by the context bar and the rate limit, so both "how full am I" numbers read alike.
+# Shared by the context ring and the rate limit bar, so both "how full am I" numbers read alike.
 function Get-ThresholdColor($pct) {
     if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
 }
@@ -122,7 +125,7 @@ $parts = @()
 $model = $data.model.display_name
 if ($model) { $parts += "$orange$model$reset" }
 
-# 2 + 3. Context bar and used percentage, threshold-colored
+# 2 + 3. Context ring and used percentage, threshold-colored
 $ctx     = $data.context_window
 $usedPct = $ctx.used_percentage
 if ($null -ne $usedPct) {

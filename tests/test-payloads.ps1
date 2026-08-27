@@ -101,18 +101,24 @@ Run "garbage payload" "not json at all"
 Write-Host @"
 
 Expected:
-  low usage      ->  13% green, 25k/200k   (NOT 26k - see Gotcha 1)
-  mid usage      ->  64% yellow, 128k/200k
-  high usage     ->  91% red, 913k/1M
+  low usage      ->  ring 13% green, 25k/200k   (NOT 26k - see Gotcha 1)
+  mid usage      ->  ring 64% yellow, 128k/200k
+  high usage     ->  ring 91% red, 913k/1M
   no rate limits ->  line ends after the directory, no trailing separator
   no context     ->  segments 2-4 absent, rest of the line intact
 
-  reset 2h14m    ->  5h 23% green,  clock reads 2h14m
-  reset 47m      ->  5h 64% yellow, clock reads 47m
-  84% red        ->  5h 84% red,    clock reads 38m
+  Ring glyph per band (pinned properly by tests\test-ring-bands.ps1):
+    0-9 empty, to 37.5 quarter, to 62.5 half, to 87.5 three-quarter, 87.5+ full.
+    So the 8% rows below render an EMPTY ring, not a sliver.
+
+  reset 2h14m    ->  5h bar 23% green,  clock reads 2h14m
+  reset 47m      ->  5h bar 64% yellow, clock reads 47m
+  84% red        ->  5h bar 84% red,    clock reads 38m
   reset past     ->  clock reads 'now', never a negative duration
-  7d window      ->  7d 44%,        clock reads 4d5h (not 101h)
-  no resets_at   ->  '5h 23%' alone, no clock
+  7d window      ->  7d bar 44%,        clock reads 4d5h (not 101h)
+  no resets_at   ->  '5h bar 23%' alone, no clock
+
+  The rate limit bar is 10 blocks; the context ring is 5 steps. Deliberately different.
 
   empty/garbage  ->  nothing at all
 "@

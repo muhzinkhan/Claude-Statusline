@@ -7,13 +7,15 @@ A custom status line for [Claude Code](https://claude.com/claude-code) on Window
 ## What it shows
 
 - **Model** — e.g. `Opus 5`
-- **Context bar** — a 10-block bar + % of context window used
+- **Context ring** — a circle that fills up (`○ ◔ ◑ ◕ ●`) + % of context window used
 - **Tokens** — used / total (e.g. `200k/1M`)
 - **Project folder**
 - **Git branch** (only shown inside a repo)
-- **Rate limit** — 5h or 7d usage %, plus a countdown to when it resets
+- **Rate limit** — 5h or 7d usage as a 10-block bar + %, plus a countdown to when it resets
 
 Colors turn green → yellow → red as usage climbs, so you can tell at a glance when you're getting close to a limit.
+
+The ring fills in five steps: `○` up to 9%, `◔` to 37.5%, `◑` to 62.5%, `◕` to 87.5%, then `●`.
 
 ## Setup
 
@@ -36,7 +38,11 @@ Want to check it works before trusting it? Run the included tests:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-payloads.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-git-branch.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-ring-bands.ps1
 ```
+
+The first two print lines for you to eyeball against an expected list. The third asserts
+the ring band boundaries and exits non-zero if any drift.
 
 ## Want the full details?
 

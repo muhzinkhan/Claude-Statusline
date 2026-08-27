@@ -20,7 +20,7 @@ function Format-Tokens($n) {
     return "{0:N0}k" -f ($n / 1000)
 }
 
-# Shared by the context bar and the rate limit, so both "how full am I" numbers read alike.
+# Shared by the context ring and the rate limit bar, so both "how full am I" numbers read alike.
 function Get-ThresholdColor($pct) {
     if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
 }
@@ -43,7 +43,7 @@ $parts = @()
 $model = $data.model.display_name
 if ($model) { $parts += "$orange$model$reset" }
 
-# 2 + 3. Context bar and used percentage, threshold-colored
+# 2 + 3. Context ring and used percentage, threshold-colored
 $ctx     = $data.context_window
 $usedPct = $ctx.used_percentage
 if ($null -ne $usedPct) {
