@@ -17,6 +17,9 @@ Colors turn green → yellow → red as usage climbs, so you can tell at a glanc
 
 The ring fills in five steps: `○` up to 9%, `◔` to 37.5%, `◑` to 62.5%, `◕` to 87.5%, then `●`.
 
+Green below 30%, yellow 30–59%, red 60% and up — the same rule colours both the ring and the
+rate limit bar, so every "how full am I" number on the line speaks one language.
+
 ## Setup
 
 1. Copy `statusline.ps1` to `~/.claude/statusline.ps1`.
@@ -39,10 +42,11 @@ Want to check it works before trusting it? Run the included tests:
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-payloads.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-git-branch.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-ring-bands.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-color-thresholds.ps1
 ```
 
-The first two print lines for you to eyeball against an expected list. The third asserts
-the ring band boundaries and exits non-zero if any drift.
+The first two print lines for you to eyeball against an expected list. The last two assert
+the ring bands and the colour thresholds, and exit non-zero if either drifts.
 
 ## Want the full details?
 

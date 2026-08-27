@@ -22,7 +22,7 @@ function Format-Tokens($n) {
 
 # Shared by the context ring and the rate limit bar, so both "how full am I" numbers read alike.
 function Get-ThresholdColor($pct) {
-    if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
+    if ($pct -lt 30) { return $green } elseif ($pct -lt 60) { return $yellow } else { return $red }
 }
 
 # Round to the nearest minute before decomposing: TimeSpan.Minutes truncates, so a real

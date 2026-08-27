@@ -13,15 +13,17 @@ bug that was actually hit and fixed during the original build.
 | `tests/test-payloads.ps1` | Renders the line against 13 payload shapes (thresholds, reset clock, missing keys, malformed input). |
 | `tests/test-git-branch.ps1` | Exercises the branch segment across 5 repo states, using throwaway repos under `$env:TEMP`. |
 | `tests/test-ring-bands.ps1` | Asserts the context ring glyph at all 17 band boundaries. Exits 1 on drift. |
+| `tests/test-color-thresholds.ps1` | Asserts the green/yellow/red boundaries, and that the ring and rate bar agree. Exits 1 on drift. |
 
-All three test scripts default to testing the installed copy at `~/.claude/statusline.ps1`.
+All four test scripts default to testing the installed copy at `~/.claude/statusline.ps1`.
 Pass `-Script .\statusline.ps1` to test the local reference copy instead. The first two print
-lines to eyeball; `test-ring-bands.ps1` asserts and sets an exit code.
+lines to eyeball; the last two assert and set an exit code.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-payloads.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-git-branch.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-ring-bands.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\test-color-thresholds.ps1
 ```
 
 If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take effect.
@@ -60,7 +62,7 @@ glyphs get deliberately narrow ones, so `●` means "genuinely nearly full" rath
 Each band opens inclusive and closes exclusive, which is what puts 37.5 on `◑` and 87.5
 on `●`. Note `○` covers everything up to 9%, so a barely-used context reads as empty.
 
-Threshold colors are keyed on **percent used**: green below 50, yellow 50–79, red 80+.
+Threshold colors are keyed on **percent used**: green below 30, yellow 30–59, red 60+.
 The *same* rule drives segments 2, 3 and 7, so every "how full am I" number on the line
 speaks one language. Segment 7 leads with its window label (`5h` / `7d`) because the bare
 percentage is ambiguous once a clock sits next to it.
@@ -70,7 +72,7 @@ It is dim so the eye lands on the percentage.
 
 Colour variants considered and rejected: cyan usage with a dim clock (no shared rule with
 the context ring); a magenta clock (a sixth colour on one line); and a segment that stays
-dim until 80% (loses at-a-glance reading during normal use).
+dim until the red threshold (loses at-a-glance reading during normal use).
 
 Every segment is individually optional. If its data is absent the segment — and its
 separator — disappears, leaving the rest of the line intact.
@@ -104,7 +106,7 @@ function Format-Tokens($n) {
 
 # Shared by the context ring and the rate limit bar, so both "how full am I" numbers read alike.
 function Get-ThresholdColor($pct) {
-    if ($pct -lt 50) { return $green } elseif ($pct -lt 80) { return $yellow } else { return $red }
+    if ($pct -lt 30) { return $green } elseif ($pct -lt 60) { return $yellow } else { return $red }
 }
 
 # Round to the nearest minute before decomposing: TimeSpan.Minutes truncates, so a real
@@ -314,16 +316,18 @@ Cover these cases and confirm each expected result:
 | Case | Expected |
 |---|---|
 | `used_percentage: 12.6`, size 200000 | `◔ 13%` green, `25k/200k` — **not** `26k` |
-| `used_percentage: 64` | `◕ 64%` yellow, `128k/200k` |
+| `used_percentage: 64` | `◕ 64%` red — 60+ is red, `128k/200k` |
 | `used_percentage: 91.3`, size 1000000 | `● 91%` red, `913k/1M` |
 | `five_hour` 23%, resets in 2h14m | `5h ██░░░░░░░░ 23%` green, clock `↻ 2h14m` — **not** `2h13m` (Gotcha 8) |
-| `five_hour` 64%, resets in 47m | `5h ██████░░░░ 64%` yellow, clock `↻ 47m` |
+| `five_hour` 64%, resets in 47m | `5h ██████░░░░ 64%` red, clock `↻ 47m` |
 | `five_hour` 84% | `5h ████████░░ 84%` red — same threshold rule as the context ring |
 | `resets_at` in the past | `↻ now`, never a negative duration |
-| `seven_day` only, 4d5h out | `7d ████░░░░░░ 44%`, clock `↻ 4d5h` — **not** `↻ 101h` |
+| `seven_day` only, 4d5h out | `7d ████░░░░░░ 44%` yellow, clock `↻ 4d5h` — **not** `↻ 101h` |
 | usage present, `resets_at` absent | `5h ██░░░░░░░░ 23%` alone, no clock |
 | reset 170 minutes out | `↻ 2h50m` — **not** `↻ 3h50m` (Gotcha 8) |
 | reset 1440 minutes out | `↻ 1d0h` |
+| `used_percentage: 29.9` / `30` | green / yellow — the first colour edge |
+| `used_percentage: 59.9` / `60` | yellow / red — the second colour edge |
 | no `rate_limits` key | line ends after directory/branch, no trailing `\|` |
 | no `context_window` key | segments 2–4 all absent, rest of line intact |
 | `used_percentage: 9` / `9.1` | `○ 9%` / `◔ 9%` — the first band edge |
@@ -352,7 +356,7 @@ Cover these cases and confirm each expected result:
 - **Rate limit bar width**: change `10` in both `$rlFill` (`$rlPct / 10`) and the
   `(10 - $rlFill)` padding. The context ring and this bar are deliberately different
   resolutions — 4 steps vs 10 — so swap `$ring` in for `$rlBar` if you want them to match.
-- **Thresholds**: the `-lt 50` / `-lt 80` comparisons in `Get-ThresholdColor`, which drives
+- **Thresholds**: the `-lt 30` / `-lt 60` comparisons in `Get-ThresholdColor`, which drives
   segments 2, 3 and 7 together. Split it into two functions to colour the context ring and
   the rate limit on different scales.
 - **Reset clock glyph**: `[char]0x21BB` (`↻`). Use `~` to stay ASCII.

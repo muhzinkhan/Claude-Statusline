@@ -23,7 +23,7 @@ Run "low usage (green) + 5h limit" @"
  "rate_limits":{"five_hour":{"used_percentage":23.1}}}
 "@
 
-Run "mid usage (yellow)" @"
+Run "mid usage (64% -> red)" @"
 {"model":{"display_name":"Opus 5"},
  "workspace":{"current_dir":"$dir"},
  "context_window":{"used_percentage":64.0,"context_window_size":200000},
@@ -37,7 +37,7 @@ Run "high usage (red) + 1M window" @"
  "rate_limits":{"seven_day":{"used_percentage":44.0}}}
 "@
 
-Run "no rate limits" @"
+Run "no rate limits (50% -> yellow)" @"
 {"model":{"display_name":"Haiku 4.5"},
  "workspace":{"current_dir":"$dir"},
  "context_window":{"used_percentage":50,"context_window_size":200000}}
@@ -101,10 +101,13 @@ Run "garbage payload" "not json at all"
 Write-Host @"
 
 Expected:
+  Colour thresholds: green below 30, yellow 30-59, red 60+.
+  (pinned properly by tests\test-color-thresholds.ps1)
+
   low usage      ->  ring 13% green, 25k/200k   (NOT 26k - see Gotcha 1)
-  mid usage      ->  ring 64% yellow, 128k/200k
+  mid usage      ->  ring 64% RED, 128k/200k    (60+ is red now)
   high usage     ->  ring 91% red, 913k/1M
-  no rate limits ->  line ends after the directory, no trailing separator
+  no rate limits ->  ring 50% yellow; line ends after the directory, no trailing separator
   no context     ->  segments 2-4 absent, rest of the line intact
 
   Ring glyph per band (pinned properly by tests\test-ring-bands.ps1):
@@ -112,10 +115,10 @@ Expected:
     So the 8% rows below render an EMPTY ring, not a sliver.
 
   reset 2h14m    ->  5h bar 23% green,  clock reads 2h14m
-  reset 47m      ->  5h bar 64% yellow, clock reads 47m
+  reset 47m      ->  5h bar 64% RED,    clock reads 47m
   84% red        ->  5h bar 84% red,    clock reads 38m
-  reset past     ->  clock reads 'now', never a negative duration
-  7d window      ->  7d bar 44%,        clock reads 4d5h (not 101h)
+  reset past     ->  5h bar 12% green;  clock reads 'now', never a negative duration
+  7d window      ->  7d bar 44% YELLOW, clock reads 4d5h (not 101h)
   no resets_at   ->  '5h bar 23%' alone, no clock
 
   The rate limit bar is 10 blocks; the context ring is 5 steps. Deliberately different.
