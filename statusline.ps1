@@ -8,6 +8,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } c
 $esc    = [char]27
 $orange = "$esc[38;2;217;119;87m"   # Claude orange (#D97757)
 $cyan   = "$esc[36m"
+$blue   = "$esc[38;2;97;175;239m"   # branch (#61AFEF)
 $green  = "$esc[32m"
 $yellow = "$esc[33m"
 $red    = "$esc[31m"
@@ -74,7 +75,7 @@ if ($dir -and (Test-Path $dir)) {
     Push-Location $dir
     $branch = git --no-optional-locks branch --show-current 2>$null
     Pop-Location
-    if ($branch) { $parts += "$green$($branch.Trim())$reset" }
+    if ($branch) { $parts += "$blue$($branch.Trim())$reset" }
 }
 
 # 7. Rate limit usage, plus time until that window resets

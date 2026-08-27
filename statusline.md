@@ -38,7 +38,7 @@ Opus 5 | █░░░░░░░░░ 8% | 76k/1M | my-project | feature/statu
 | 3 | Context **used** % | `context_window.used_percentage` | same threshold color |
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
 | 5 | Current directory (leaf only) | `workspace.current_dir` | dim |
-| 6 | Git branch, only inside a repo | `git branch --show-current` | green |
+| 6 | Git branch, only inside a repo | `git branch --show-current` | blue |
 | 7 | Rate limit %, 5h → 7d fallback | `rate_limits.*.used_percentage` | same threshold color |
 | 7 | ↻ time until that window resets | `rate_limits.*.resets_at` | dim |
 
@@ -72,6 +72,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } c
 $esc    = [char]27
 $orange = "$esc[38;2;217;119;87m"   # Claude orange (#D97757)
 $cyan   = "$esc[36m"
+$blue   = "$esc[38;2;97;175;239m"   # branch (#61AFEF)
 $green  = "$esc[32m"
 $yellow = "$esc[33m"
 $red    = "$esc[31m"
@@ -138,7 +139,7 @@ if ($dir -and (Test-Path $dir)) {
     Push-Location $dir
     $branch = git --no-optional-locks branch --show-current 2>$null
     Pop-Location
-    if ($branch) { $parts += "$green$($branch.Trim())$reset" }
+    if ($branch) { $parts += "$blue$($branch.Trim())$reset" }
 }
 
 # 7. Rate limit usage, plus time until that window resets
@@ -297,7 +298,7 @@ Cover these cases and confirm each expected result:
 | no `context_window` key | segments 2–4 all absent, rest of line intact |
 | `{}` | prints nothing, exit 0 |
 | non-JSON input | prints nothing, exit 0 |
-| repo with commits | branch in green |
+| repo with commits | branch in blue |
 | `git init`, no commits (unborn) | branch name still shown |
 | detached HEAD | branch segment omitted |
 | not a repo / nonexistent dir | branch segment omitted |

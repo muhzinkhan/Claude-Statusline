@@ -55,8 +55,8 @@ try {
     Write-Host @"
 
 Expected:
-  normal branch  ->  feature/status-bar in green
-  unborn branch  ->  main in green (rev-parse would show nothing here)
+  normal branch  ->  feature/status-bar in blue
+  unborn branch  ->  main in blue (rev-parse would show nothing here)
   detached HEAD  ->  branch segment omitted
   not a repo     ->  branch segment omitted
   missing dir    ->  branch segment omitted
