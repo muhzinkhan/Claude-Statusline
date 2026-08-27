@@ -89,8 +89,13 @@ if     ($null -ne $rl.five_hour.used_percentage) { $label = "5h"; $win = $rl.fiv
 elseif ($null -ne $rl.seven_day.used_percentage) { $label = "7d"; $win = $rl.seven_day }
 
 if ($label) {
+    # Clamp before deriving the bar: an out-of-range percentage would make the pad
+    # count negative. Same explicit-double clamp as the context window (Gotcha 1).
     $rlPct = [double]$win.used_percentage
-    $seg   = "$(Get-ThresholdColor $rlPct)$label $([math]::Round($rlPct))%$reset"
+    if ($rlPct -lt 0) { $rlPct = 0 } elseif ($rlPct -gt 100) { $rlPct = 100 }
+    $rlFill = [int][math]::Round($rlPct / 10)
+    $rlBar  = ([string][char]0x2588) * $rlFill + ([string][char]0x2591) * (10 - $rlFill)
+    $seg    = "$(Get-ThresholdColor $rlPct)$label $rlBar $([math]::Round($rlPct))%$reset"
 
     # resets_at is unix epoch seconds (the CLI reads it as new Date(resets_at * 1000)).
     if ($win.resets_at) {

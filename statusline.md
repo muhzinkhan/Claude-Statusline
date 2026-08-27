@@ -28,7 +28,7 @@ If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take
 A single-line status bar with seven segments, separated by a dim `|`:
 
 ```
-Opus 5 | ◔ 8% | 76k/1M | my-project | feature/status-bar | 5h 23% ↻ 2h14m
+Opus 5 | ◔ 8% | 76k/1M | my-project | feature/status-bar | 5h ██░░░░░░░░ 23% ↻ 2h14m
 ```
 
 | # | Segment | Source field | Color |
@@ -39,7 +39,7 @@ Opus 5 | ◔ 8% | 76k/1M | my-project | feature/status-bar | 5h 23% ↻ 2h14m
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
 | 5 | Current directory (leaf only) | `workspace.current_dir` | dim |
 | 6 | Git branch, only inside a repo | `git branch --show-current` | blue |
-| 7 | Rate limit %, 5h → 7d fallback | `rate_limits.*.used_percentage` | same threshold color |
+| 7 | Rate limit 10-block bar + %, 5h → 7d fallback | `rate_limits.*.used_percentage` | same threshold color |
 | 7 | ↻ time until that window resets | `rate_limits.*.resets_at` | dim |
 
 Threshold colors are keyed on **percent used**: green below 50, yellow 50–79, red 80+.
@@ -153,8 +153,13 @@ if     ($null -ne $rl.five_hour.used_percentage) { $label = "5h"; $win = $rl.fiv
 elseif ($null -ne $rl.seven_day.used_percentage) { $label = "7d"; $win = $rl.seven_day }
 
 if ($label) {
+    # Clamp before deriving the bar: an out-of-range percentage would make the pad
+    # count negative. Same explicit-double clamp as the context window (Gotcha 1).
     $rlPct = [double]$win.used_percentage
-    $seg   = "$(Get-ThresholdColor $rlPct)$label $([math]::Round($rlPct))%$reset"
+    if ($rlPct -lt 0) { $rlPct = 0 } elseif ($rlPct -gt 100) { $rlPct = 100 }
+    $rlFill = [int][math]::Round($rlPct / 10)
+    $rlBar  = ([string][char]0x2588) * $rlFill + ([string][char]0x2591) * (10 - $rlFill)
+    $seg    = "$(Get-ThresholdColor $rlPct)$label $rlBar $([math]::Round($rlPct))%$reset"
 
     # resets_at is unix epoch seconds (the CLI reads it as new Date(resets_at * 1000)).
     if ($win.resets_at) {
@@ -191,12 +196,12 @@ Clamping the percentage this way corrupts every value derived from it — the to
 rendered `26k` instead of `25k`, and `910k` instead of `913k`. Cast to `[double]` and
 clamp with plain `-lt` / `-gt` comparisons instead.
 
-**2. Circle glyphs need an explicit UTF-8 console.**
-Windows PowerShell 5.1 mangles `○ ◔ ◑ ◕ ●` (U+25CB, U+25D4, U+25D1, U+25D5, U+25CF) under
-the default OEM codepage. Set `[Console]::OutputEncoding` at the top of the script, wrapped in `try/catch`
+**2. Circle and block glyphs need an explicit UTF-8 console.**
+Windows PowerShell 5.1 mangles `○ ◔ ◑ ◕ ●` (U+25CB, U+25D4, U+25D1, U+25D5, U+25CF) and the
+rate limit's `█ ░` (U+2588, U+2591) under the default OEM codepage. Set `[Console]::OutputEncoding` at the top of the script, wrapped in `try/catch`
 so a restricted host can't kill the whole line. Build the characters with
-`[char]0x25CB` rather than pasting literals, so the script survives being saved in a
-non-UTF-8 encoding.
+`[char]0x25CB` / `[char]0x2588` rather than pasting literals, so the script survives
+being saved in a non-UTF-8 encoding.
 
 **3. Use `[Console]::Out.Write`, not `Write-Output`.**
 `Write-Output` appends CRLF, leaving a stray carriage return in a single-line status bar.
@@ -290,12 +295,12 @@ Cover these cases and confirm each expected result:
 | `used_percentage: 12.6`, size 200000 | `◔ 13%` green, `25k/200k` — **not** `26k` |
 | `used_percentage: 64` | `◕ 64%` yellow, `128k/200k` |
 | `used_percentage: 91.3`, size 1000000 | `● 91%` red, `913k/1M` |
-| `five_hour` 23%, resets in 2h14m | `5h 23%` green, clock `↻ 2h14m` — **not** `2h13m` (Gotcha 8) |
-| `five_hour` 64%, resets in 47m | `5h 64%` yellow, clock `↻ 47m` |
-| `five_hour` 84% | `5h 84%` red — same threshold rule as the context bar |
+| `five_hour` 23%, resets in 2h14m | `5h ██░░░░░░░░ 23%` green, clock `↻ 2h14m` — **not** `2h13m` (Gotcha 8) |
+| `five_hour` 64%, resets in 47m | `5h ██████░░░░ 64%` yellow, clock `↻ 47m` |
+| `five_hour` 84% | `5h ████████░░ 84%` red — same threshold rule as the context ring |
 | `resets_at` in the past | `↻ now`, never a negative duration |
-| `seven_day` only, 4d5h out | `7d 44%`, clock `↻ 4d5h` — **not** `↻ 101h` |
-| usage present, `resets_at` absent | `5h 23%` alone, no clock |
+| `seven_day` only, 4d5h out | `7d ████░░░░░░ 44%`, clock `↻ 4d5h` — **not** `↻ 101h` |
+| usage present, `resets_at` absent | `5h ██░░░░░░░░ 23%` alone, no clock |
 | reset 170 minutes out | `↻ 2h50m` — **not** `↻ 3h50m` (Gotcha 8) |
 | reset 1440 minutes out | `↻ 1d0h` |
 | no `rate_limits` key | line ends after directory/branch, no trailing `\|` |
@@ -319,8 +324,11 @@ Cover these cases and confirm each expected result:
   have large variants (`0x25EF`, `0x2B24`), so the set would change size as it fills. Moon
   phase emoji (`0x1F311`..`0x1F315`) are double-width and 8-step, but force their own colour
   and would break the shared threshold palette.
+- **Rate limit bar width**: change `10` in both `$rlFill` (`$rlPct / 10`) and the
+  `(10 - $rlFill)` padding. The context ring and this bar are deliberately different
+  resolutions — 4 steps vs 10 — so swap `$ring` in for `$rlBar` if you want them to match.
 - **Thresholds**: the `-lt 50` / `-lt 80` comparisons in `Get-ThresholdColor`, which drives
-  segments 2, 3 and 7 together. Split it into two functions to colour the context bar and
+  segments 2, 3 and 7 together. Split it into two functions to colour the context ring and
   the rate limit on different scales.
 - **Reset clock glyph**: `[char]0x21BB` (`↻`). Use `~` to stay ASCII.
 - **Clock colour**: it is `$dim`; make it `$cyan` or `$magenta` to give time its own colour.
