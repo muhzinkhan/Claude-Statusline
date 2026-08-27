@@ -2,7 +2,7 @@
 
 A custom status line for [Claude Code](https://claude.com/claude-code) on Windows/PowerShell. Shows your model, context usage, tokens, project, git branch, and rate limits — all in one line.
 
-![Status line preview](/preview/screenshot.jpg)
+![Status line preview](/preview/preview.png)
 
 ## What it shows
 
