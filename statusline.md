@@ -28,13 +28,13 @@ If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take
 A single-line status bar with seven segments, separated by a dim `|`:
 
 ```
-Opus 5 | █░░░░░░░░░ 8% | 76k/1M | my-project | feature/status-bar | 5h 23% ↻ 2h14m
+Opus 5 | ◔ 8% | 76k/1M | my-project | feature/status-bar | 5h 23% ↻ 2h14m
 ```
 
 | # | Segment | Source field | Color |
 |---|---------|--------------|-------|
 | 1 | Model name | `model.display_name` | Claude orange `#D97757` (24-bit) |
-| 2 | 10-block context bar | `context_window.used_percentage` | threshold: green / yellow / red |
+| 2 | Context ring (Harvey ball) | `context_window.used_percentage` | threshold: green / yellow / red |
 | 3 | Context **used** % | `context_window.used_percentage` | same threshold color |
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
 | 5 | Current directory (leaf only) | `workspace.current_dir` | dim |
@@ -115,8 +115,12 @@ if ($null -ne $usedPct) {
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
     $color  = Get-ThresholdColor $pct
-    $filled = [int][math]::Round($pct / 10)
-    $bar    = ([string][char]0x2588) * $filled + ([string][char]0x2591) * (10 - $filled)
+    # Harvey ball. Quarter resolution is enough: the exact % sits right beside it.
+    $ring   = @(0x25CB, 0x25D4, 0x25D1, 0x25D5, 0x25CF)
+    $idx    = [int][math]::Round($pct / 25)
+    # Bias any nonzero usage up to at least a sliver, so 0% and 8% don't both read empty.
+    if ($pct -gt 0 -and $idx -eq 0) { $idx = 1 }
+    $bar    = [string][char]$ring[$idx]
     $parts += "$color$bar $([math]::Round($pct))%$reset"
 
     # 4. Tokens used out of the context window size
@@ -187,11 +191,11 @@ Clamping the percentage this way corrupts every value derived from it — the to
 rendered `26k` instead of `25k`, and `910k` instead of `913k`. Cast to `[double]` and
 clamp with plain `-lt` / `-gt` comparisons instead.
 
-**2. Block glyphs need an explicit UTF-8 console.**
-Windows PowerShell 5.1 mangles `█` (U+2588) and `░` (U+2591) under the default OEM
-codepage. Set `[Console]::OutputEncoding` at the top of the script, wrapped in `try/catch`
+**2. Circle glyphs need an explicit UTF-8 console.**
+Windows PowerShell 5.1 mangles `○ ◔ ◑ ◕ ●` (U+25CB, U+25D4, U+25D1, U+25D5, U+25CF) under
+the default OEM codepage. Set `[Console]::OutputEncoding` at the top of the script, wrapped in `try/catch`
 so a restricted host can't kill the whole line. Build the characters with
-`[char]0x2588` rather than pasting literals, so the script survives being saved in a
+`[char]0x25CB` rather than pasting literals, so the script survives being saved in a
 non-UTF-8 encoding.
 
 **3. Use `[Console]::Out.Write`, not `Write-Output`.**
@@ -283,9 +287,9 @@ Cover these cases and confirm each expected result:
 
 | Case | Expected |
 |---|---|
-| `used_percentage: 12.6`, size 200000 | `█░░░░░░░░░ 13%` green, `25k/200k` — **not** `26k` |
-| `used_percentage: 64` | `██████░░░░ 64%` yellow, `128k/200k` |
-| `used_percentage: 91.3`, size 1000000 | `█████████░ 91%` red, `913k/1M` |
+| `used_percentage: 12.6`, size 200000 | `◔ 13%` green, `25k/200k` — **not** `26k` |
+| `used_percentage: 64` | `◕ 64%` yellow, `128k/200k` |
+| `used_percentage: 91.3`, size 1000000 | `● 91%` red, `913k/1M` |
 | `five_hour` 23%, resets in 2h14m | `5h 23%` green, clock `↻ 2h14m` — **not** `2h13m` (Gotcha 8) |
 | `five_hour` 64%, resets in 47m | `5h 64%` yellow, clock `↻ 47m` |
 | `five_hour` 84% | `5h 84%` red — same threshold rule as the context bar |
@@ -296,6 +300,7 @@ Cover these cases and confirm each expected result:
 | reset 1440 minutes out | `↻ 1d0h` |
 | no `rate_limits` key | line ends after directory/branch, no trailing `\|` |
 | no `context_window` key | segments 2–4 all absent, rest of line intact |
+| `used_percentage: 0.4` | `◔ 0%` — nonzero never reads as an empty ring |
 | `{}` | prints nothing, exit 0 |
 | non-JSON input | prints nothing, exit 0 |
 | repo with commits | branch in blue |
@@ -306,7 +311,14 @@ Cover these cases and confirm each expected result:
 ## Customizing
 
 - **Reorder** segments by moving the `$parts +=` blocks; order in the array is order on screen.
-- **Bar width**: change `10` in both `$filled` (`$pct / 10`) and the `(10 - $filled)` padding.
+- **Ring resolution**: `$ring` is quarter-resolution. Unicode has no finer monochrome pie
+  set, so more steps means changing shape: `@(0x2581..0x2588)` gives an 8-level vertical meter
+  in one cell, and the original 10-block bar was
+  `([string][char]0x2588) * [int][math]::Round($pct / 10)` padded out with `0x2591`.
+- **Bigger ring**: not really possible. Terminal cells are fixed-size, and only the endpoints
+  have large variants (`0x25EF`, `0x2B24`), so the set would change size as it fills. Moon
+  phase emoji (`0x1F311`..`0x1F315`) are double-width and 8-step, but force their own colour
+  and would break the shared threshold palette.
 - **Thresholds**: the `-lt 50` / `-lt 80` comparisons in `Get-ThresholdColor`, which drives
   segments 2, 3 and 7 together. Split it into two functions to colour the context bar and
   the rate limit on different scales.

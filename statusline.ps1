@@ -51,8 +51,12 @@ if ($null -ne $usedPct) {
     $pct = [double]$usedPct
     if ($pct -lt 0) { $pct = 0 } elseif ($pct -gt 100) { $pct = 100 }
     $color  = Get-ThresholdColor $pct
-    $filled = [int][math]::Round($pct / 10)
-    $bar    = ([string][char]0x2588) * $filled + ([string][char]0x2591) * (10 - $filled)
+    # Harvey ball. Quarter resolution is enough: the exact % sits right beside it.
+    $ring   = @(0x25CB, 0x25D4, 0x25D1, 0x25D5, 0x25CF)
+    $idx    = [int][math]::Round($pct / 25)
+    # Bias any nonzero usage up to at least a sliver, so 0% and 8% don't both read empty.
+    if ($pct -gt 0 -and $idx -eq 0) { $idx = 1 }
+    $bar    = [string][char]$ring[$idx]
     $parts += "$color$bar $([math]::Round($pct))%$reset"
 
     # 4. Tokens used out of the context window size
