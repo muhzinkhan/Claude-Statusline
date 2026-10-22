@@ -23,6 +23,13 @@ Run "low usage (green) + 5h limit" @"
  "rate_limits":{"five_hour":{"used_percentage":23.1}}}
 "@
 
+Run "effort level shown" @"
+{"model":{"display_name":"Opus 5"},
+ "effort":{"level":"high"},
+ "workspace":{"current_dir":"$dir"},
+ "context_window":{"used_percentage":12.6,"context_window_size":200000}}
+"@
+
 Run "mid usage (64% -> red)" @"
 {"model":{"display_name":"Opus 5"},
  "workspace":{"current_dir":"$dir"},
@@ -105,6 +112,7 @@ Expected:
   (pinned properly by tests\test-color-thresholds.ps1)
 
   low usage      ->  ring 13% green, 25k/200k   (NOT 26k - see Gotcha 1)
+  effort level   ->  dim 'high' between the model name and the ring
   mid usage      ->  ring 64% RED, 128k/200k    (60+ is red now)
   high usage     ->  ring 91% red, 913k/1M
   no rate limits ->  ring 50% yellow; line ends after the directory, no trailing separator

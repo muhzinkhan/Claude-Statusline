@@ -30,15 +30,16 @@ If you edit `statusline.ps1` here, copy it to `~/.claude/statusline.ps1` to take
 
 ## Goal
 
-A single-line status bar with seven segments, separated by a dim `|`:
+A single-line status bar with eight segments, separated by a dim `|`:
 
 ```
-Opus 5 | ○ 8% | 76k/1M | my-project | feature/status-bar | 5h ██░░░░░░░░ 23% ↻ 2h14m
+Opus 5 | high | ○ 8% | 76k/1M | my-project | feature/status-bar | 5h ██░░░░░░░░ 23% ↻ 2h14m
 ```
 
 | # | Segment | Source field | Color |
 |---|---------|--------------|-------|
 | 1 | Model name | `model.display_name` | Claude orange `#D97757` (24-bit) |
+| 1b | Reasoning effort | `effort.level` | dim |
 | 2 | Context ring (Harvey ball, see bands below) | `context_window.used_percentage` | threshold: green / yellow / red |
 | 3 | Context **used** % | `context_window.used_percentage` | same threshold color |
 | 4 | Tokens used / window size | derived (see Gotcha 4) | dim |
@@ -126,6 +127,10 @@ $parts = @()
 # 1. Model name
 $model = $data.model.display_name
 if ($model) { $parts += "$orange$model$reset" }
+
+# 1b. Reasoning effort (low / medium / high / xhigh / max)
+$effort = $data.effort.level
+if ($effort) { $parts += "$dim$effort$reset" }
 
 # 2 + 3. Context ring and used percentage, threshold-colored
 $ctx     = $data.context_window

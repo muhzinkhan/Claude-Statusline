@@ -43,6 +43,10 @@ $parts = @()
 $model = $data.model.display_name
 if ($model) { $parts += "$orange$model$reset" }
 
+# 1b. Reasoning effort (low / medium / high / xhigh / max)
+$effort = $data.effort.level
+if ($effort) { $parts += "$dim$effort$reset" }
+
 # 2 + 3. Context ring and used percentage, threshold-colored
 $ctx     = $data.context_window
 $usedPct = $ctx.used_percentage
